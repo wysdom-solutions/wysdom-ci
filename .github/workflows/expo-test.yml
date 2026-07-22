@@ -111,7 +111,7 @@ jobs:
 
       # Coverage is published as a build artifact only. A self-owned coverage gate
       # ("codecov light") is tracked in BACKLOG.md — no third-party uploader here.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: ${{ always() && steps.gate.outputs.changed == 'true' }}
         with:
           name: coverage-report

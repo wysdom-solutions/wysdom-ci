@@ -145,7 +145,7 @@ jobs:
           mv android/app/build/outputs/bundle/release/app-release.aab "$OUT"
           echo "AAB_NAME=$OUT" >> "$GITHUB_ENV"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.AAB_NAME }}
           path: ${{ inputs.working-directory }}/${{ env.AAB_NAME }}
