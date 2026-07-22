@@ -25,7 +25,7 @@ jobs:
   resolve-valid:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: r
         uses: ./.github/actions/resolve-expo-version
         with:
@@ -48,7 +48,7 @@ jobs:
   resolve-mismatch:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: r
         continue-on-error: true
         uses: ./.github/actions/resolve-expo-version
@@ -67,7 +67,7 @@ jobs:
   resolve-missing:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: r
         continue-on-error: true
         uses: ./.github/actions/resolve-expo-version
@@ -85,7 +85,7 @@ jobs:
   resolve-injection:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: r
         continue-on-error: true
         uses: ./.github/actions/resolve-expo-version

@@ -72,7 +72,7 @@ jobs:
       run:
         working-directory: ${{ inputs.working-directory }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Resolve + validate the version first so a bad version fails in seconds, before setup.
       # `./` resolves to THIS repo (wysdom-ci) at the ref the reusable workflow was called with.
