@@ -155,7 +155,7 @@ jobs:
       # supply reads SUPPLY_JSON_KEY_DATA from env so the service-account JSON never hits argv.
       - name: Set up Ruby
         if: ${{ inputs.publish-to-play && github.ref_type == 'tag' }}
-        uses: ruby/setup-ruby@d45b1a4e94b71acab930e56e79c6aa188764e7f9 # v1
+        uses: ruby/setup-ruby@a30dfa457ad68707b8b910ac3a244714b61c0626 # v1
         with:
           ruby-version: '3.3'
 
