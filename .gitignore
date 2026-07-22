@@ -1,0 +1,5 @@
+# Node
+node_modules/
+
+# Generated test artifacts (e.g. the fixture's coverage output)
+coverage/

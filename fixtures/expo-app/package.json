@@ -1,0 +1,12 @@
+{
+  "name": "expo-app-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Minimal Expo-shaped fixture that exercises wysdom-ci's expo-test workflow. Scripts are dependency-free stubs — the fixture proves the CI plumbing (changed-files gate, toggles, step sequencing, coverage artifact), not the tools themselves.",
+  "scripts": {
+    "type-check": "node -e \"console.log('type-check: fixture stub OK')\"",
+    "lint": "node -e \"console.log('lint: fixture stub OK')\"",
+    "format:check": "node -e \"console.log('format:check: fixture stub OK')\"",
+    "test:coverage": "node scripts/coverage.js"
+  }
+}

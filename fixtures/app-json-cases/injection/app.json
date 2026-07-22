@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "injection",
+    "slug": "injection",
+    "version": "1.0.0; rm -rf /",
+    "android": {
+      "versionCode": 5
+    },
+    "ios": {
+      "buildNumber": "5"
+    }
+  }
+}

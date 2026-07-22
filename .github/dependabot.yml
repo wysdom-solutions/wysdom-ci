@@ -1,0 +1,10 @@
+version: 2
+updates:
+  # Keep the SHA-pinned third-party actions (and any actions/* refs) current. Dependabot
+  # updates a pinned SHA + its "# vX.Y.Z" comment together, so pinning stays maintainable.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci

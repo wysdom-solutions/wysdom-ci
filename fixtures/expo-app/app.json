@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "fixture-app",
+    "slug": "fixture-app",
+    "version": "1.0.0",
+    "android": {
+      "versionCode": 1
+    },
+    "ios": {
+      "buildNumber": "1"
+    }
+  }
+}

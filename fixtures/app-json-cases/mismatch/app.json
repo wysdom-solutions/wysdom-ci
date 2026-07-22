@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "mismatch",
+    "slug": "mismatch",
+    "version": "1.2.3",
+    "android": {
+      "versionCode": 5
+    },
+    "ios": {
+      "buildNumber": "5"
+    }
+  }
+}

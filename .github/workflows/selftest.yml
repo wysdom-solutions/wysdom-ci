@@ -1,0 +1,100 @@
+# In-repo proof harness. Exercises the reusable pieces against the fixtures so they can be
+# validated without any external consumer:
+#   - expo-test.yml is invoked as a local reusable workflow against fixtures/expo-app
+#   - resolve-expo-version is driven through its valid + failure cases (fixtures/app-json-cases)
+# The release workflows are not self-tested here — they need real signing secrets and
+# platform runners.
+name: selftest
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Prove the test pipeline runs (gate + steps + coverage artifact) against the fixture app.
+  test-pipeline:
+    uses: ./.github/workflows/expo-test.yml
+    with:
+      working-directory: fixtures/expo-app
+
+  # Happy path: a tag build whose tag matches app.json — expect success + correct outputs.
+  resolve-valid:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: r
+        uses: ./.github/actions/resolve-expo-version
+        with:
+          working-directory: fixtures/app-json-cases/valid
+          tag: v1.2.3
+          ref-type: tag
+      - name: Assert outputs
+        env:
+          V: ${{ steps.r.outputs.version }}
+          VC: ${{ steps.r.outputs.version-code }}
+          BN: ${{ steps.r.outputs.build-number }}
+        run: |
+          set -euo pipefail
+          [[ "$V" == "1.2.3" ]] || { echo "::error::version='$V' (want 1.2.3)"; exit 1; }
+          [[ "$VC" == "5" ]]    || { echo "::error::version-code='$VC' (want 5)"; exit 1; }
+          [[ "$BN" == "5" ]]    || { echo "::error::build-number='$BN' (want 5)"; exit 1; }
+          echo "valid case OK"
+
+  # Identity guard: tag v9.9.9 != app.json 1.2.3 — expect the action to fail.
+  resolve-mismatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: r
+        continue-on-error: true
+        uses: ./.github/actions/resolve-expo-version
+        with:
+          working-directory: fixtures/app-json-cases/mismatch
+          tag: v9.9.9
+          ref-type: tag
+      - name: Assert failure
+        run: |
+          set -euo pipefail
+          [[ "${{ steps.r.outcome }}" == "failure" ]] \
+            || { echo "::error::expected failure, got '${{ steps.r.outcome }}'"; exit 1; }
+          echo "mismatch correctly rejected"
+
+  # Missing build identifiers in app.json — expect the action to fail.
+  resolve-missing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: r
+        continue-on-error: true
+        uses: ./.github/actions/resolve-expo-version
+        with:
+          working-directory: fixtures/app-json-cases/missing
+          ref-type: branch
+      - name: Assert failure
+        run: |
+          set -euo pipefail
+          [[ "${{ steps.r.outcome }}" == "failure" ]] \
+            || { echo "::error::expected failure, got '${{ steps.r.outcome }}'"; exit 1; }
+          echo "missing-fields correctly rejected"
+
+  # Injection attempt: version string fails the format guard — expect the action to fail.
+  resolve-injection:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: r
+        continue-on-error: true
+        uses: ./.github/actions/resolve-expo-version
+        with:
+          working-directory: fixtures/app-json-cases/injection
+          ref-type: branch
+      - name: Assert failure
+        run: |
+          set -euo pipefail
+          [[ "${{ steps.r.outcome }}" == "failure" ]] \
+            || { echo "::error::expected failure, got '${{ steps.r.outcome }}'"; exit 1; }
+          echo "injection correctly rejected"

@@ -1,0 +1,108 @@
+name: Resolve Expo version
+description: >-
+  Resolve and validate an Expo app's release version identity from app.json and the
+  triggering git ref. Emits the version name plus the native build identifiers. This is
+  a guard, not a passthrough: on a tag build it fails fast if the tag disagrees with
+  app.json, and it rejects any version string that isn't strict-semver-shaped
+  (injection-safe). Expo-only — it reads app.json and does not apply to .NET/Godot projects.
+
+inputs:
+  working-directory:
+    description: Directory containing app.json (the Expo project root).
+    required: false
+    default: src
+  tag:
+    description: >-
+      The git ref name that triggered the run. On a tag build this is the source of the
+      version name (leading "v" is stripped). Defaults to the triggering ref.
+    required: false
+    default: ${{ github.ref_name }}
+  ref-type:
+    description: >-
+      "tag" or "branch". When "tag", the version is taken from the tag and cross-checked
+      against app.json. Defaults to the triggering ref type.
+    required: false
+    default: ${{ github.ref_type }}
+  input-version:
+    description: >-
+      Optional manual version override (e.g. from a workflow_dispatch input) used only on
+      non-tag builds. Leave empty to fall back to app.json's .expo.version.
+    required: false
+    default: ''
+
+outputs:
+  version:
+    description: The resolved, validated version name (e.g. "1.2.3").
+    value: ${{ steps.resolve.outputs.version }}
+  version-code:
+    description: Android versionCode read from app.json (.expo.android.versionCode).
+    value: ${{ steps.resolve.outputs.version-code }}
+  build-number:
+    description: iOS buildNumber read from app.json (.expo.ios.buildNumber).
+    value: ${{ steps.resolve.outputs.build-number }}
+
+runs:
+  using: composite
+  steps:
+    - id: resolve
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        # Passed through the environment (never interpolated into the script body) so a
+        # hostile ref name can't inject shell — the format guard validates it before use.
+        TAG: ${{ inputs.tag }}
+        REF_TYPE: ${{ inputs.ref-type }}
+        INPUT_VERSION: ${{ inputs.input-version }}
+      run: |
+        set -euo pipefail
+
+        if [[ ! -f app.json ]]; then
+          echo "::error::app.json not found in $(pwd)"
+          exit 1
+        fi
+
+        # 1. Pick the candidate version name.
+        if [[ "$REF_TYPE" == "tag" ]]; then
+          VN="${TAG#v}"                       # strip a single leading "v"
+        elif [[ -n "$INPUT_VERSION" ]]; then
+          VN="$INPUT_VERSION"
+        else
+          VN="$(jq -r '.expo.version' app.json)"
+        fi
+
+        # 2. Format guard — reject anything that isn't a strict semver-ish token. This is
+        #    what makes the value safe to write to $GITHUB_OUTPUT and reuse downstream.
+        if ! [[ "$VN" =~ ^[0-9]+(\.[0-9]+){0,2}([+-][A-Za-z0-9.]+)?$ ]]; then
+          echo "::error::Invalid version '$VN'. Must match ^[0-9]+(\.[0-9]+){0,2}([+-][A-Za-z0-9.]+)?\$"
+          exit 1
+        fi
+
+        # 3. Build identifiers come from app.json only (manual versioning source of truth).
+        VC="$(jq -r '.expo.android.versionCode' app.json)"
+        BN="$(jq -r '.expo.ios.buildNumber' app.json)"
+        if [[ "$VC" == "null" || -z "$VC" ]]; then
+          echo "::error::.expo.android.versionCode is missing from app.json"
+          exit 1
+        fi
+        if [[ "$BN" == "null" || -z "$BN" ]]; then
+          echo "::error::.expo.ios.buildNumber is missing from app.json"
+          exit 1
+        fi
+
+        # 4. Identity guard — on a tag build the tag MUST equal app.json's version, or we'd
+        #    ship a binary whose baked-in identity silently mismatches the release.
+        if [[ "$REF_TYPE" == "tag" ]]; then
+          APP_VERSION="$(jq -r '.expo.version' app.json)"
+          if [[ "$VN" != "$APP_VERSION" ]]; then
+            echo "::error::Tag version '$VN' != app.json .expo.version '$APP_VERSION'. Bump app.json."
+            exit 1
+          fi
+        fi
+
+        # 5. Emit.
+        {
+          echo "version=$VN"
+          echo "version-code=$VC"
+          echo "build-number=$BN"
+        } >> "$GITHUB_OUTPUT"
+        echo "Resolved version=$VN version-code=$VC build-number=$BN"

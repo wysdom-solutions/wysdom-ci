@@ -1,0 +1,222 @@
+# Reusable iOS release workflow for Expo React Native apps.
+#
+# Builds and signs a release IPA via `expo prebuild` + xcodebuild, uploads it to TestFlight,
+# and attaches it to a draft GitHub Release. Uses an ephemeral keychain (cert import) and the
+# supplied provisioning profile; ExportOptions.plist is generated in-workflow so consumers
+# don't need to commit one. Internal-testing delivery only — never a public App Store release.
+#
+# Example caller (release.yml, triggered by a v* tag):
+#   jobs:
+#     ios:
+#       uses: wysdom-solutions/wysdom-ci/.github/workflows/expo-ios-release.yml@v1
+#       with: { app-slug: fuzz-noise, bundle-id: com.wysdomsolutions.fuzznoise }
+#       secrets: inherit
+name: expo-ios-release
+
+on:
+  workflow_call:
+    inputs:
+      app-slug:
+        description: Artifact filename prefix, e.g. "fuzz-noise".
+        type: string
+        required: true
+      bundle-id:
+        description: iOS bundle identifier, e.g. "com.wysdomsolutions.fuzznoise".
+        type: string
+        required: true
+      working-directory:
+        description: Directory containing the Expo app.
+        type: string
+        default: src
+      node-version:
+        description: Node.js version for actions/setup-node.
+        type: string
+        default: 20.x
+      xcode-version:
+        description: Xcode version for setup-xcode. Apple requires the latest SDK for App Store upload.
+        type: string
+        default: latest-stable
+      version-name:
+        description: Optional manual version override forwarded from a workflow_dispatch input.
+        type: string
+        default: ''
+    secrets:
+      IOS_DIST_CERT_P12_BASE64:
+        required: true
+      IOS_DIST_CERT_PASSWORD:
+        required: true
+      IOS_KEYCHAIN_PASSWORD:
+        required: true
+      IOS_PROVISIONING_PROFILE_BASE64:
+        required: true
+      APPLE_TEAM_ID:
+        required: true
+      APP_STORE_CONNECT_ISSUER_ID:
+        required: true
+      APP_STORE_CONNECT_KEY_ID:
+        required: true
+      APP_STORE_CONNECT_API_KEY_P8:
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build signed IPA
+    runs-on: macos-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Resolve + validate the version first so a bad version fails before the costly setup.
+      - name: Resolve version
+        id: version
+        uses: ./.github/actions/resolve-expo-version
+        with:
+          working-directory: ${{ inputs.working-directory }}
+          input-version: ${{ inputs.version-name }}
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
+        with:
+          xcode-version: ${{ inputs.xcode-version }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+
+      - run: npm ci
+
+      - name: Apply resolved version to app.json
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          jq --arg v "$VERSION" '.expo.version = $v' app.json > app.json.tmp
+          mv app.json.tmp app.json
+
+      - name: Expo prebuild (ios)
+        run: npx expo prebuild --platform ios --no-install --clean
+
+      - name: Import distribution certificate
+        uses: apple-actions/import-codesign-certs@5142e029c445c10ffc7149d172e540235a065466 # v7.0.0
+        with:
+          p12-file-base64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          p12-password: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+          keychain-password: ${{ secrets.IOS_KEYCHAIN_PASSWORD }}
+
+      - name: Install provisioning profile
+        env:
+          PROFILE_B64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          PROFILE_PATH="$RUNNER_TEMP/profile.mobileprovision"
+          echo "$PROFILE_B64" | base64 -d > "$PROFILE_PATH"
+          security cms -D -i "$PROFILE_PATH" > "$RUNNER_TEMP/profile.plist"
+          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" "$RUNNER_TEMP/profile.plist")
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" "$RUNNER_TEMP/profile.plist")
+          DEST="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$DEST"
+          cp "$PROFILE_PATH" "$DEST/$PROFILE_UUID.mobileprovision"
+          echo "PROFILE_NAME=$PROFILE_NAME" >> "$GITHUB_ENV"
+
+      - name: CocoaPods install
+        working-directory: ${{ inputs.working-directory }}/ios
+        run: pod install
+
+      - name: Generate ExportOptions.plist
+        working-directory: ${{ inputs.working-directory }}/ios
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          BUNDLE_ID: ${{ inputs.bundle-id }}
+          PROFILE_NAME: ${{ env.PROFILE_NAME }}
+        run: |
+          set -euo pipefail
+          # method "app-store-connect" is the current Xcode value (was "app-store" pre-15).
+          cat > ExportOptions.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>teamID</key><string>${TEAM_ID}</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>${BUNDLE_ID}</key><string>${PROFILE_NAME}</string>
+            </dict>
+            <key>uploadSymbols</key><true/>
+          </dict>
+          </plist>
+          PLIST
+
+      - name: Archive
+        working-directory: ${{ inputs.working-directory }}/ios
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          PROFILE_NAME: ${{ env.PROFILE_NAME }}
+        run: |
+          set -euo pipefail
+          WORKSPACE=$(ls -d *.xcworkspace | head -1)
+          SCHEME=$(basename "$WORKSPACE" .xcworkspace)
+          echo "Using workspace=$WORKSPACE scheme=$SCHEME"
+          xcodebuild \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/app.xcarchive" \
+            archive \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME"
+
+      - name: Export IPA
+        working-directory: ${{ inputs.working-directory }}/ios
+        env:
+          APP_SLUG: ${{ inputs.app-slug }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/app.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -exportOptionsPlist ExportOptions.plist
+          OUT="${APP_SLUG}-${VERSION}.ipa"
+          mv "$RUNNER_TEMP/export/"*.ipa "$RUNNER_TEMP/$OUT"
+          echo "IPA_PATH=$RUNNER_TEMP/$OUT" >> "$GITHUB_ENV"
+          echo "IPA_NAME=$OUT" >> "$GITHUB_ENV"
+
+      - name: Upload to TestFlight
+        uses: apple-actions/upload-testflight-build@1ad58030672057aa084b4e96beb6f7a8c627f9e6 # v5.2.1
+        with:
+          app-path: ${{ env.IPA_PATH }}
+          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          api-key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          api-private-key: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.IPA_NAME }}
+          path: ${{ env.IPA_PATH }}
+          retention-days: 30
+
+      - name: Attach to draft release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          IPA_PATH: ${{ env.IPA_PATH }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --draft --title "$TAG" --notes "Automated draft release for $TAG"
+          fi
+          gh release upload "$TAG" "$IPA_PATH" --clobber

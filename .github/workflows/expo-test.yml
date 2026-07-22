@@ -1,0 +1,120 @@
+# Reusable test workflow for Expo React Native apps.
+#
+# Callers invoke it on pull_request + push and it always reports a single required check.
+# A changed-files gate runs the heavy steps (install, type-check, lint, format, tests) only
+# when the app source (or workflow config) actually changed, so docs/design-only PRs get a
+# green required check instead of a stuck one — no per-repo branch-protection surgery.
+#
+# Example caller:
+#   jobs:
+#     test:
+#       uses: wysdom-solutions/wysdom-ci/.github/workflows/expo-test.yml@v1
+#       secrets: inherit
+name: expo-test
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: Directory containing the Expo app (package.json / app.json).
+        type: string
+        default: src
+      node-version:
+        description: Node.js version for actions/setup-node.
+        type: string
+        default: 20.x
+      run-lint:
+        description: Run `npm run lint`. Toggle off for repos without a lint script yet.
+        type: boolean
+        default: true
+      run-format-check:
+        description: Run `npm run format:check`. Toggle off for repos without a format:check script yet.
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Changed-files gate: decide whether the heavy steps run. Runs from the repo root
+      # (not the app dir) so git sees the whole tree. Event values are passed via env so a
+      # hostile ref/branch name can't inject shell.
+      - name: Detect source changes
+        id: gate
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        env:
+          WD: ${{ inputs.working-directory }}
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          changed=true   # default to running on anything unexpected — safer than skipping
+          pattern="^(${WD}/|\.github/)"
+
+          if [[ "$EVENT" == "pull_request" ]]; then
+            git fetch --no-tags --depth=1 origin "$BASE_REF" || true
+            if git diff --name-only "origin/${BASE_REF}...HEAD" > changed.txt 2>/dev/null; then
+              grep -qE "$pattern" changed.txt && changed=true || changed=false
+            fi
+          elif [[ "$EVENT" == "push" ]]; then
+            if [[ "$BEFORE" =~ ^0+$ ]]; then
+              changed=true   # new branch / no "before" — run
+            elif git diff --name-only "$BEFORE" "$SHA" > changed.txt 2>/dev/null; then
+              grep -qE "$pattern" changed.txt && changed=true || changed=false
+            fi
+          fi
+
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+          echo "Source changed: $changed"
+
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.changed == 'true'
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+
+      - name: Install dependencies
+        if: steps.gate.outputs.changed == 'true'
+        run: npm ci
+
+      - name: Type-check
+        if: steps.gate.outputs.changed == 'true'
+        run: npm run type-check
+
+      - name: Lint
+        if: ${{ steps.gate.outputs.changed == 'true' && inputs.run-lint }}
+        run: npm run lint
+
+      - name: Format check
+        if: ${{ steps.gate.outputs.changed == 'true' && inputs.run-format-check }}
+        run: npm run format:check
+
+      - name: Test with coverage
+        if: steps.gate.outputs.changed == 'true'
+        run: npm run test:coverage -- --ci --maxWorkers=2
+
+      # Coverage is published as a build artifact only. A self-owned coverage gate
+      # ("codecov light") is tracked in BACKLOG.md — no third-party uploader here.
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && steps.gate.outputs.changed == 'true' }}
+        with:
+          name: coverage-report
+          path: ${{ inputs.working-directory }}/coverage/
+          retention-days: 30
+          if-no-files-found: ignore
