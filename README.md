@@ -61,7 +61,7 @@ jobs:
 
 ## Inputs (summary)
 
-- **expo-test:** `working-directory` (`src`), `node-version` (`20.x`), `run-lint` (`true`),
+- **expo-test:** `working-directory` (`src`), `node-version` (`22.x`), `run-lint` (`true`),
   `run-format-check` (`true`).
 - **android:** `app-slug` (required), `working-directory`, `node-version`, `java-version` (`17`),
   `package-name`, `publish-to-play` (`false`), `play-track` (`internal`), `version-name`.
