@@ -96,7 +96,7 @@ jobs:
 | Input | Default | Purpose |
 |---|---|---|
 | `working-directory` | `src` | Monorepo app dir |
-| `node-version` | `20.x` | |
+| `node-version` | `22.x` | |
 | `run-lint` | `true` | Toggle so glass-buddy can adopt before adding a lint script |
 | `run-format-check` | `true` | Toggle for `format:check` |
 | `upload-codecov` | `false` | glass-buddy opts in; others artifact-only |
@@ -137,7 +137,7 @@ via `gh secret set`), then `secrets: inherit` passes them through.
 1. **Manual versioning from `app.json` stays.** `versionName` from the git tag; `versionCode`/`buildNumber` read from `app.json` (source of truth — deterministic, survives re-runs). Tag must equal `app.json.version` or the build fails fast. Keep the strict-semver regex guard (injection-safe). Extract this into the `resolve-version` composite action so both platforms share it.
 2. **Ref pinning:** callers pin `@v1` (a moving major tag). Start on `@main` during the pilot, cut `@v1` once proven, then move callers to `@v1`. Consider `@<sha>` for maximum reproducibility later.
 3. **Bake in the no-src-PR gate (fuzz-noise#103).** The shared test workflow drops trigger-level `paths:` filtering in favor of a **changed-files gate** (`dorny/paths-filter` or `git diff`): the workflow always triggers, reports a green required check every time, but runs the heavy steps (`npm ci`, type-check, lint, tests) *only* when `src/**` changed. Fixes the required-check deadlock on docs/design-only PRs for **every** consumer at once — no per-repo branch-protection surgery.
-4. **Bake in Gradle cache persistence (fuzz-noise#82)** in the shared Android workflow (`gradle/actions/setup-gradle@v4` with write-enabled cache on `main`).
+4. **Bake in Gradle cache persistence (fuzz-noise#82)** in the shared Android workflow (`gradle/actions/setup-gradle@v5` with write-enabled cache on `main`).
 5. **Grow into store auto-deploy (#150 / fuzz-noise#74), don't block on it.** Ship build+sign first. The `publish-to-play` input + `PLAY_SERVICE_ACCOUNT_JSON` secret are the seams for the later `r0adkll/upload-google-play` step (internal track, tag-only). iOS already auto-uploads to TestFlight; auto-assigning to the internal group + export-compliance handling is a follow-up.
 6. **Standardize `defaults.working-directory: src`** (drop glass-buddy's per-step `cd src`).
 

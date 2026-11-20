@@ -8,3 +8,8 @@ updates:
       interval: weekly
     commit-message:
       prefix: ci
+    ignore:
+      # setup-gradle v6+ bundles a proprietary caching component under Gradle's Terms of Use;
+      # stay on the MIT-licensed v5 line unless those terms are accepted.
+      - dependency-name: gradle/actions/setup-gradle
+        update-types: ["version-update:semver-major"]

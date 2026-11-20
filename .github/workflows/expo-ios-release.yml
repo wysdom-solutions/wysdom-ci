@@ -31,7 +31,7 @@ on:
       node-version:
         description: Node.js version for actions/setup-node.
         type: string
-        default: 20.x
+        default: 22.x
       xcode-version:
         description: Xcode version for setup-xcode. Apple requires the latest SDK for App Store upload.
         type: string
@@ -70,7 +70,7 @@ jobs:
       run:
         working-directory: ${{ inputs.working-directory }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Resolve + validate the version first so a bad version fails before the costly setup.
       - name: Resolve version
@@ -85,7 +85,7 @@ jobs:
         with:
           xcode-version: ${{ inputs.xcode-version }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ inputs.node-version }}
           cache: npm
@@ -202,7 +202,7 @@ jobs:
           api-key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           api-private-key: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.IPA_NAME }}
           path: ${{ env.IPA_PATH }}

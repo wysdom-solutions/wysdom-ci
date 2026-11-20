@@ -22,7 +22,7 @@ on:
       node-version:
         description: Node.js version for actions/setup-node.
         type: string
-        default: 20.x
+        default: 22.x
       run-lint:
         description: Run `npm run lint`. Toggle off for repos without a lint script yet.
         type: boolean
@@ -44,7 +44,7 @@ jobs:
       run:
         working-directory: ${{ inputs.working-directory }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -82,7 +82,7 @@ jobs:
           echo "changed=$changed" >> "$GITHUB_OUTPUT"
           echo "Source changed: $changed"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: steps.gate.outputs.changed == 'true'
         with:
           node-version: ${{ inputs.node-version }}
@@ -111,7 +111,7 @@ jobs:
 
       # Coverage is published as a build artifact only. A self-owned coverage gate
       # ("codecov light") is tracked in BACKLOG.md — no third-party uploader here.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: ${{ always() && steps.gate.outputs.changed == 'true' }}
         with:
           name: coverage-report
